@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chatbot</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div id="chatbox" class="chatbox"></div>
+    <div id="typingIndicator" class="typing-indicator">Typing...</div>
+
+    <textarea id="userMessage" placeholder="Type your message..."></textarea>
+    <textarea id="systemPrompt" placeholder="System prompt..."></textarea>
+
+    <input type="number" id="temperature" placeholder="Temperature (0.7)" step="0.1" min="0">
+    <input type="number" id="topP" placeholder="Top P (0.9)" step="0.1" min="0">
+
+    <input type="text" id="apiKey" placeholder="Enter your Gemini API key">
+    <select id="modelSelect">
+        <option value="gemini-1.5-flash">Gemini 1.5 Flash</option>
+        <option value="gemini-1.5-pro">Gemini 1.5 Pro</option>
+        <option value="gemini-1.0-pro">Gemini 1.0 Pro</option>
+    </select>
+
+    <button id="sendButton">Send</button>
+    <button id="exportButton">Export Chat</button>
+    <input type="file" id="importFile" style="display:none;">
+    <button id="importButton">Import Chat</button>
+
+    <!-- Import modules from CDN -->
+    <script type="module" src="app.js"></script>
+    <script type="module">
+        import { GoogleGenerativeAI } from "https://cdn.jsdelivr.net/npm/@google/generative-ai/+esm";
+
+        window.sendMessage = async function sendMessage() {
+            const userMessage = document.getElementById('userMessage').value;
+            const systemPrompt = document.getElementById('systemPrompt').value;
+            const temperature = document.getElementById('temperature').value;
+            const topP = document.getElementById('topP').value;
+            const apiKey = document.getElementById('apiKey').value;
+            const modelName = document.getElementById('modelSelect').value;
+
+            if (!apiKey) {
+                alert('Please enter your API key.');
+                return;
+            }
+
+            if (!userMessage.trim()) {
+                alert('Please enter a message.');
+                return;
+            }
+
+            const chatbox = document.getElementById('chatbox');
+            const userMessageElem = document.createElement('div');
+            userMessageElem.className = 'message user';
+            userMessageElem.textContent = userMessage;
+            chatbox.appendChild(userMessageElem);
+
+            document.getElementById('userMessage').value = '';
+
+            const typingIndicator = document.getElementById('typingIndicator');
+            typingIndicator.style.display = 'block';
+
+            const genAI = new GoogleGenerativeAI(apiKey);
+
+            let model;
+            try {
+                model = genAI.getGenerativeModel({ model: modelName });
+
+                const prompt = `${systemPrompt}\nUser: ${userMessage}\nAI:`;
+
+                async function retryRequest(prompt, retries = 3, delay = 1000) {
+                    while (retries > 0) {
+                        try {
+                            const result = await model.generateContent(prompt, {
+                                temperature: parseFloat(temperature) || 0.7,
+                                top_p: parseFloat(topP) || 0.9
+                            });
+                            return result;
+                        } catch (error) {
+                            console.error('Attempt failed:', error);
+                            retries--;
+                            if (retries > 0) {
+                                console.log(`Retrying... ${retries} attempts left`);
+                                await new Promise(res => setTimeout(res, delay));
+                            } else {
+                                throw error;
+                            }
+                        }
+                    }
+                }
+
+                const result = await retryRequest(prompt);
+
+                typingIndicator.style.display = 'none';
+
+                const botMessageElem = document.createElement('div');
+                botMessageElem.className = 'message bot';
+                botMessageElem.textContent = result.response.text();
+                chatbox.appendChild(botMessageElem);
+                chatbox.scrollTop = chatbox.scrollHeight;
+
+            } catch (error) {
+                console.error('Error:', error);
+                typingIndicator.style.display = 'none';
+
+                let errorMessage = 'Failed to generate a response. Please try again later.';
+                if (error.message.includes('500')) {
+                    errorMessage = 'Internal server error. Please retry in a few moments.';
+                }
+
+                alert(errorMessage);
+            }
+        };
+
+        document.getElementById('sendButton').addEventListener('click', sendMessage);
+    </script>
+</body>
+</html>
